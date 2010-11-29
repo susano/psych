@@ -9,6 +9,14 @@ for it's YAML parsing and emitting capabilities.  In addition to wrapping
 libyaml, Psych also knows how to serialize and de-serialize most Ruby objects
 to and from the YAML format.
 
+== Install
+
+You need Ruby 1.9.2-p0 or higher. Also install libyaml fx in one of the following ways...
+
+$ brew install libyaml
+$ port install libyaml +universal 
+$ yum install libyaml-devel
+
 == Examples
 
   # Load YAML in to a Ruby object
@@ -16,6 +24,77 @@ to and from the YAML format.
 
   # Emit YAML from a Ruby object
   Psych.dump("foo")     # => "--- foo\n...\n"
+
+== Documentation
+
+http://tenderlovemaking.com/2010/04/17/event-based-json-and-yaml-parsing/
+
+Our event listener is only going to listen for scalar events, meaning that when Psych parses a string, it will send that string to our listener. There are many different events that can happen, so Psych ships with a handler from which you can inherit. If you check out the source for the base class handler, you can see what types of events your handler can intercept.
+
+  require 'psych'
+
+  class Listener < Psych::Handler
+    def scalar(value, anchor, tag, plain, quoted, style)
+      puts value
+    end
+  end
+
+  listener = Listener.new
+  parser   = Psych::Parser.new listener
+  parser.parse DATA
+
+  __END__
+  {"foo":"bar"}
+
+In this example, our handler simply prints out every scalar value encountered. We created a new instance of the listener, pass that listener to a new instance of the parser, and tell the parser to parse DATA. We can hand the parser an IO object or a String object. This is important because we’d like to hand the parser our socket connection, that way the parser can deal with reading from the socket for us.
+
+  require 'socket'
+  require 'psych'
+
+  class StreamClient
+    def initialize user, pass
+      @ba = ["#{user}:#{pass}"].pack('m').chomp
+    end
+
+    def listen listener
+      socket = TCPSocket.new 'stream.twitter.com', 80
+      # .. (authentication) ...
+
+      # Read the headers
+      while((line = socket.readline) != "\r\n"); puts line if $DEBUG; end
+
+      reader, writer = IO.pipe
+      producer = Thread.new(socket, writer) do |s, io|
+        loop do
+          io.write "---\n"
+          io.write s.read s.readline.strip.to_i 16
+          io.write "...\n"
+          s.read 2 # strip the blank line
+        end
+      end
+
+      parser = Psych::Parser.new listener
+      parser.parse reader
+
+      producer.join
+    end
+  end
+
+  class Listener < Psych::Handler
+    def initialize
+      @was_text = false
+    end
+
+    def scalar value, anchor, tag, plain, quoted, style
+      puts value if @was_text
+      @was_text = value == 'text'
+    end
+  end
+
+  StreamClient.new(ARGV[0], ARGV[1]).listen Listener.new
+
+We configure the “listen” method in our client to munge the feed to a pipe, and hand that off to our YAML processor. 
+I only care about the text of people’s tweets, so let’s modify our listener too.
 
 == Dependencies
 
