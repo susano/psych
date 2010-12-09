@@ -1,4 +1,4 @@
-require 'psych.so'
+require 'psych/psych.so'
 require 'psych/nodes'
 require 'psych/visitors'
 require 'psych/handler'
